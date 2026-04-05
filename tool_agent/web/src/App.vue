@@ -1,1087 +1,841 @@
 <template>
-  <n-config-provider :theme-overrides="themeOverrides">
+  <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-message-provider>
-      <n-dialog-provider>
-        <n-notification-provider>
-          <div class="app-container">
-            <!-- 顶部导航 -->
-            <header class="app-header">
-              <div class="header-content">
-                <div class="logo">
-                  <n-icon :size="32" color="#18a058">
-                    <video-camera-outline />
+      <n-notification-provider>
+        <div class="app-container">
+          <!-- Header -->
+          <header class="app-header">
+            <div class="header-left">
+              <img :src="logoUrl" alt="VideoBuddy" class="logo-img" />
+              <span class="logo-text">VideoBuddy</span>
+            </div>
+            <div class="header-right">
+              <n-button quaternary circle @click="store.toggleHistory()" title="历史对话">
+                <template #icon>
+                  <n-icon><menu-outline /></n-icon>
+                </template>
+              </n-button>
+            </div>
+          </header>
+
+          <!-- Main Content -->
+          <main class="app-main">
+            <!-- Video Upload Section (Optional, Above Chat) -->
+            <div v-if="!store.hasVideo" class="upload-section">
+              <div class="upload-tabs">
+                <button
+                  :class="['tab', { active: uploadMode === 'file' }]"
+                  @click="uploadMode = 'file'"
+                >
+                  上传视频
+                </button>
+                <button
+                  :class="['tab', { active: uploadMode === 'url' }]"
+                  @click="uploadMode = 'url'"
+                >
+                  视频链接
+                </button>
+              </div>
+
+              <div v-if="uploadMode === 'file'" class="upload-zone" @click="triggerFileInput">
+                <input
+                  ref="fileInputRef"
+                  type="file"
+                  accept="video/*"
+                  style="display: none"
+                  @change="handleFileSelect"
+                />
+                <div class="upload-content">
+                  <n-icon :size="32" class="upload-icon">
+                    <cloud-upload-outline />
                   </n-icon>
-                  <span class="logo-text">视频理解智能体</span>
-                </div>
-                <div class="header-actions">
-                  <n-button quaternary @click="goHome">
-                    <template #icon>
-                      <n-icon><home-outline /></n-icon>
-                    </template>
-                    首页
-                  </n-button>
-                  <n-button quaternary @click="loadSessions">
-                    <template #icon>
-                      <n-icon><list-outline /></n-icon>
-                    </template>
-                    历史
-                  </n-button>
-                </div>
-              </div>
-            </header>
-
-            <!-- 主内容 -->
-            <main class="app-main">
-              <!-- 首页：上传视频 -->
-              <div v-if="!store.hasSession && view === 'home'" class="home-view">
-                <div class="hero-section">
-                  <h1 class="hero-title">视频理解智能体</h1>
-                  <p class="hero-subtitle">基于长短期记忆管理的长视频理解与问答系统</p>
-                </div>
-
-                <div class="upload-section">
-                  <n-card class="upload-card">
-                    <div
-                      class="upload-zone"
-                      :class="{ 'upload-zone-active': isDragOver }"
-                      @dragover.prevent="isDragOver = true"
-                      @dragleave="isDragOver = false"
-                      @drop.prevent="handleDrop"
-                    >
-                      <input
-                        ref="fileInputRef"
-                        type="file"
-                        accept="video/*"
-                        class="file-input"
-                        @change="handleFileChange"
-                      />
-                      <div class="upload-content">
-                        <n-icon :size="64" color="#18a058" class="upload-icon">
-                          <cloud-upload-outline />
-                        </n-icon>
-                        <n-text class="upload-text">
-                          拖拽视频文件到此处，或
-                          <n-text type="primary" class="upload-link">点击选择</n-text>
-                        </n-text>
-                        <n-text depth="3" class="upload-hint">
-                          支持 MP4, AVI, MOV 等格式
-                        </n-text>
-                      </div>
-                    </div>
-
-                    <div v-if="previewFile" class="preview-section">
-                      <n-card embedded>
-                        <div class="preview-info">
-                          <n-icon :size="24" color="#18a058">
-                            <film-outline />
-                          </n-icon>
-                          <n-text>{{ previewFile.name }}</n-text>
-                          <n-text depth="3">({{ formatFileSize(previewFile.size) }})</n-text>
-                        </div>
-                        <n-button
-                          type="primary"
-                          size="large"
-                          :loading="store.isUploading"
-                          :disabled="!previewFile"
-                          @click="handleUpload"
-                          class="upload-btn"
-                        >
-                          <template #icon>
-                            <n-icon><play-outline /></n-icon>
-                          </template>
-                          {{ store.isUploading ? '上传中...' : '开始分析' }}
-                        </n-button>
-                      </n-card>
-                    </div>
-
-                    <n-alert v-if="store.error" type="error" class="error-alert">
-                      {{ store.error }}
-                    </n-alert>
-                  </n-card>
-                </div>
-
-                <!-- 功能介绍 -->
-                <div class="features-section">
-                  <n-grid :cols="3" :x-gap="24" :y-gap="24">
-                    <n-gi>
-                      <n-card class="feature-card">
-                        <template #header>
-                          <div class="feature-header">
-                            <n-icon :size="28" color="#18a058">
-                              <flash-outline />
-                            </n-icon>
-                            <span>自适应抽帧</span>
-                          </div>
-                        </template>
-                        <n-text depth="2">
-                          基于内容变化的智能抽帧技术，在保证语义完整性的同时大幅降低计算开销
-                        </n-text>
-                      </n-card>
-                    </n-gi>
-                    <n-gi>
-                      <n-card class="feature-card">
-                        <template #header>
-                          <div class="feature-header">
-                            <n-icon :size="28" color="#18a058">
-                              <brain-outline />
-                            </n-icon>
-                            <span>长短期记忆</span>
-                          </div>
-                        </template>
-                        <n-text depth="2">
-                          模拟人类认知机制，短期记忆保留细节，长期记忆提炼语义，实现跨时间关联理解
-                        </n-text>
-                      </n-card>
-                    </n-gi>
-                    <n-gi>
-                      <n-card class="feature-card">
-                        <template #header>
-                          <div class="feature-header">
-                            <n-icon :size="28" color="#18a058">
-                              <chatbox-outline />
-                            </n-icon>
-                            <span>智能问答</span>
-                          </div>
-                        </template>
-                        <n-text depth="2">
-                          基于记忆检索的精准问答，理解视频整体内容与细节，支持复杂推理与关联分析
-                        </n-text>
-                      </n-card>
-                    </n-gi>
-                  </n-grid>
+                  <span class="upload-text">点击选择视频文件</span>
+                  <span class="upload-hint">支持 MP4, AVI, MOV, WebM</span>
                 </div>
               </div>
 
-              <!-- 处理中视图 -->
-              <div v-else-if="store.isProcessing" class="processing-view">
-                <n-card class="processing-card">
-                  <div class="processing-header">
-                    <n-icon :size="48" color="#18a058" class="processing-icon">
-                      <sync-outline />
-                    </n-icon>
-                    <h2>视频分析中</h2>
-                    <n-text depth="2">{{ store.processingMessage }}</n-text>
-                  </div>
-
-                  <n-progress
-                    type="line"
-                    :percentage="Math.round(store.processingProgress * 100)"
-                    :indicator-placement="'inside'"
-                    :processing="store.isProcessing"
-                    status="success"
-                  />
-
-                  <n-list class="processing-steps">
-                    <n-list-item
-                      v-for="step in processingSteps"
-                      :key="step.key"
-                      :class="{ active: store.processingStage === step.key, completed: isStepCompleted(step.key) }"
-                    >
-                      <template #prefix>
-                        <n-icon v-if="isStepCompleted(step.key)" color="#18a058">
-                          <checkmark-circle-outline />
-                        </n-icon>
-                        <n-spin v-else-if="store.processingStage === step.key" :size="16" />
-                        <n-icon v-else depth="4">
-                          <ellipse-outline />
-                        </n-icon>
-                      </template>
-                      {{ step.label }}
-                    </n-list-item>
-                  </n-list>
-                </n-card>
-              </div>
-
-              <!-- 会话问答视图 -->
-              <div v-else-if="store.hasSession" class="session-view">
-                <div class="session-layout">
-                  <!-- 左侧：视频和信息 -->
-                  <div class="session-left">
-                    <n-card class="video-card">
-                      <template #header>
-                        <div class="card-header">
-                          <n-icon :size="20" color="#18a058">
-                            <film-outline />
-                          </n-icon>
-                          <span>{{ store.currentSession?.video_name }}</span>
-                        </div>
-                      </template>
-                      <div class="video-player">
-                        <video
-                          v-if="store.currentSession?.video_path"
-                          :src="`file://${store.currentSession.video_path}`"
-                          controls
-                          class="video-element"
-                        />
-                        <div v-else class="video-placeholder">
-                          <n-icon :size="64" depth="4">
-                            <videocam-outline />
-                          </n-icon>
-                        </div>
-                      </div>
-                      <div class="video-info">
-                        <n-statistic label="视频时长" :value="formatDuration(store.currentSession?.video_duration || 0)" />
-                        <n-statistic label="处理帧数" :value="store.currentSession?.total_frames || 0" />
-                        <n-statistic label="语义片段" :value="store.currentSession?.total_segments || 0" />
-                      </div>
-                    </n-card>
-
-                    <!-- 记忆时间轴 -->
-                    <n-card class="memory-card">
-                      <template #header>
-                        <div class="card-header">
-                          <n-icon :size="20" color="#18a058">
-                            <time-outline />
-                          </n-icon>
-                          <span>记忆时间轴</span>
-                        </div>
-                      </template>
-                      <div class="timeline">
-                        <div
-                          v-for="segment in store.longTermSegments"
-                          :key="segment.segment_id"
-                          class="timeline-item"
-                          :style="{ left: `${(segment.start_time / (store.currentSession?.video_duration || 1)) * 100}%` }"
-                          @click="selectedSegment = segment"
-                        >
-                          <div class="timeline-marker"></div>
-                          <div class="timeline-tooltip">
-                            <n-text strong>{{ segment.start_time.toFixed(0) }}s - {{ segment.end_time.toFixed(0) }}s</n-text>
-                            <n-text depth="2">{{ segment.summary }}</n-text>
-                          </div>
-                        </div>
-                      </div>
-                    </n-card>
-                  </div>
-
-                  <!-- 右侧：问答 -->
-                  <div class="session-right">
-                    <!-- 视频摘要 -->
-                    <n-card v-if="videoSummary" class="summary-card">
-                      <template #header>
-                        <div class="card-header">
-                          <n-icon :size="20" color="#18a058">
-                            <document-text-outline />
-                          </n-icon>
-                          <span>视频摘要</span>
-                        </div>
-                      </template>
-                      <n-text>{{ videoSummary }}</n-text>
-                    </n-card>
-
-                    <!-- 对话历史 -->
-                    <n-card class="chat-card">
-                      <template #header>
-                        <div class="card-header">
-                          <n-icon :size="20" color="#18a058">
-                            <chatbubbles-outline />
-                          </n-icon>
-                          <span>智能问答</span>
-                        </div>
-                      </template>
-                      <div class="chat-messages" ref="chatContainerRef">
-                        <div
-                          v-for="(conv, idx) in store.conversations"
-                          :key="idx"
-                          class="chat-message"
-                        >
-                          <div class="message-question">
-                            <div class="message-label">
-                              <n-icon :size="14"><chatbox-ellipses-outline /></n-icon>
-                              问题
-                            </div>
-                            <div class="message-content">{{ conv.question }}</div>
-                          </div>
-                          <div class="message-answer">
-                            <div class="message-label">
-                              <n-icon :size="14"><checkmark-circle-outline /></n-icon>
-                              回答
-                            </div>
-                            <div class="message-content">{{ conv.answer }}</div>
-                          </div>
-                        </div>
-                        <div v-if="store.conversations.length === 0" class="chat-empty">
-                          <n-empty description="开始提问吧" />
-                        </div>
-                      </div>
-
-                      <!-- 输入区域 -->
-                      <div class="chat-input">
-                        <n-input
-                          v-model:value="questionInput"
-                          type="text"
-                          placeholder="请输入您的问题..."
-                          @keydown.enter="handleAsk"
-                          :disabled="isAsking"
-                        />
-                        <n-button
-                          type="primary"
-                          :loading="isAsking"
-                          @click="handleAsk"
-                          :disabled="!questionInput.trim()"
-                        >
-                          <template #icon>
-                            <n-icon><send-outline /></n-icon>
-                          </template>
-                          提问
-                        </n-button>
-                      </div>
-                    </n-card>
-
-                    <!-- 记忆片段 -->
-                    <n-card class="segments-card">
-                      <template #header>
-                        <div class="card-header">
-                          <n-icon :size="20" color="#18a058">
-                            <layers-outline />
-                          </n-icon>
-                          <span>记忆片段 ({{ store.longTermSegments.length }})</span>
-                        </div>
-                      </template>
-                      <div class="segments-list">
-                        <div
-                          v-for="segment in store.longTermSegments"
-                          :key="segment.segment_id"
-                          class="segment-item"
-                          :class="{ active: selectedSegment?.segment_id === segment.segment_id }"
-                          @click="selectedSegment = segment"
-                        >
-                          <div class="segment-time">{{ segment.start_time.toFixed(0) }}s - {{ segment.end_time.toFixed(0) }}s</div>
-                          <n-text depth="2" class="segment-summary">{{ segment.summary }}</n-text>
-                          <div v-if="segment.events.length" class="segment-events">
-                            <n-tag v-for="event in segment.events.slice(0, 2)" :key="event" size="small">
-                              {{ event }}
-                            </n-tag>
-                          </div>
-                        </div>
-                      </div>
-
-                      <!-- 选中片段详情 -->
-                      <div v-if="selectedSegment" class="segment-detail">
-                        <n-divider />
-                        <n-text strong>{{ selectedSegment.start_time.toFixed(0) }}s - {{ selectedSegment.end_time.toFixed(0) }}s</n-text>
-                        <n-text>{{ selectedSegment.summary }}</n-text>
-                        <div v-if="selectedSegment.entities.length" class="segment-entities">
-                          <n-text depth="3">实体: </n-text>
-                          <n-text>{{ selectedSegment.entities.join(', ') }}</n-text>
-                        </div>
-                        <div v-if="selectedSegment.events.length" class="segment-events-detail">
-                          <n-text depth="3">事件: </n-text>
-                          <n-text>{{ selectedSegment.events.join(', ') }}</n-text>
-                        </div>
-                      </div>
-                    </n-card>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 历史会话视图 -->
-              <div v-else-if="view === 'history'" class="history-view">
-                <n-card>
-                  <template #header>
-                    <div class="history-header">
-                      <h2>历史会话</h2>
-                      <n-button quaternary @click="goHome">
-                        <n-icon><close-outline /></n-icon>
-                      </n-button>
-                    </div>
+              <div v-else class="url-input-section">
+                <n-input
+                  v-model:value="videoUrl"
+                  placeholder="请输入视频链接..."
+                  @keydown.enter="handleUrlSubmit"
+                >
+                  <template #append>
+                    <n-button @click="handleUrlSubmit" :disabled="!videoUrl.trim()">
+                      添加
+                    </n-button>
                   </template>
-                  <n-list v-if="store.sessions.length > 0">
-                    <n-list-item v-for="session in store.sessions" :key="session.session_id">
-                      <div class="session-item">
-                        <div class="session-info">
-                          <n-text strong>{{ session.video_name }}</n-text>
-                          <n-text depth="3">
-                            {{ formatDate(session.created_at) }} |
-                            {{ session.status.stage }}
-                          </n-text>
-                        </div>
-                        <div class="session-actions">
-                          <n-button
-                            v-if="session.status.stage === 'done'"
-                            type="primary"
-                            size="small"
-                            @click="openSession(session.session_id)"
-                          >
-                            打开
-                          </n-button>
-                          <n-button
-                            type="error"
-                            size="small"
-                            ghost
-                            @click="handleDeleteSession(session.session_id)"
-                          >
-                            删除
-                          </n-button>
-                        </div>
-                      </div>
-                    </n-list-item>
-                  </n-list>
-                  <n-empty v-else description="暂无历史会话" />
-                </n-card>
+                </n-input>
               </div>
-            </main>
+
+              <div v-if="store.hasVideo" class="video-preview">
+                <div class="preview-info">
+                  <n-icon><film-outline /></n-icon>
+                  <span>{{ store.videoInfo?.name }}</span>
+                  <n-button quaternary circle size="small" @click="store.clearVideo()">
+                    <template #icon>
+                      <n-icon><close-outline /></n-icon>
+                    </template>
+                  </n-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Video Preview (When Video Uploaded) -->
+            <div v-if="store.hasVideo" class="video-section">
+              <video
+                v-if="store.videoInfo?.url"
+                :src="store.videoInfo.url"
+                controls
+                class="video-player"
+              />
+              <div v-else class="video-placeholder">
+                <n-icon :size="48"><videocam-outline /></n-icon>
+                <span>{{ store.videoInfo?.name }}</span>
+              </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="messages-container" ref="messagesContainer">
+              <!-- Welcome Message -->
+              <div v-if="store.messages.length === 0 && !store.isProcessing" class="welcome-message">
+                <img :src="logoUrl" alt="VideoBuddy" class="welcome-logo" />
+                <h2>我是 VideoBuddy</h2>
+                <p v-if="store.hasVideo">视频已准备就绪，开始问我任何关于这个视频的问题吧！</p>
+                <p v-else>我是视频理解智能体，可以分析视频内容并回答问题。</p>
+              </div>
+
+              <!-- Message List -->
+              <div
+                v-for="msg in store.messages"
+                :key="msg.id"
+                :class="['message-wrapper', msg.role]"
+              >
+                <div class="message-avatar">
+                  <img v-if="msg.role === 'assistant'" :src="logoUrl" alt="AI" />
+                  <div v-else class="user-avatar">U</div>
+                </div>
+                <div class="message-content">
+                  <div v-if="msg.role === 'user'" class="message-bubble user">
+                    {{ msg.content }}
+                  </div>
+                  <div v-else class="message-bubble assistant" v-html="renderMarkdown(msg.content)" />
+                </div>
+              </div>
+
+              <!-- Processing Indicator -->
+              <div v-if="store.isProcessing" class="message-wrapper assistant">
+                <div class="message-avatar">
+                  <img :src="logoUrl" alt="AI" />
+                </div>
+                <div class="message-content">
+                  <div class="message-bubble assistant processing">
+                    <div class="processing-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+
+          <!-- Status Bar -->
+          <div class="status-bar">
+            <div class="status-content">
+              <n-icon v-if="store.isProcessing" class="status-icon spinning">
+                <sync-outline />
+              </n-icon>
+              <n-icon v-else class="status-icon">
+                <checkmark-circle-outline />
+              </n-icon>
+              <span class="status-text">
+                {{ store.isProcessing ? store.processingMessage : 'VideoBuddy 已就绪' }}
+              </span>
+              <n-progress
+                v-if="store.isProcessing"
+                type="line"
+                :percentage="Math.round(store.processingProgress * 100)"
+                :show-indicator="false"
+                :height="4"
+                class="status-progress"
+              />
+            </div>
           </div>
-        </n-notification-provider>
-      </n-dialog-provider>
+
+          <!-- Input Area -->
+          <div class="input-area">
+            <div class="input-container">
+              <textarea
+                ref="inputRef"
+                v-model="inputMessage"
+                class="input-field"
+                placeholder="输入消息..."
+                rows="1"
+                @keydown="handleKeydown"
+                @input="autoResize"
+              />
+              <n-button
+                type="primary"
+                circle
+                :disabled="!inputMessage.trim() || store.isProcessing"
+                @click="handleSend"
+                class="send-btn"
+              >
+                <template #icon>
+                  <n-icon><paper-plane-outline /></n-icon>
+                </template>
+              </n-button>
+            </div>
+            <p class="input-hint">VideoBuddy 可以分析视频内容并回答问题</p>
+          </div>
+
+          <!-- History Drawer -->
+          <n-drawer v-model:show="store.isHistoryOpen" :width="320" placement="right">
+            <n-drawer-content title="历史对话" closable>
+              <div v-if="store.historySessions.length === 0" class="history-empty">
+                <n-empty description="暂无历史对话" />
+              </div>
+              <div v-else class="history-list">
+                <div
+                  v-for="session in store.historySessions"
+                  :key="session.sessionId"
+                  class="history-item"
+                  @click="loadSession(session.sessionId)"
+                >
+                  <div class="history-icon">
+                    <n-icon><film-outline /></n-icon>
+                  </div>
+                  <div class="history-info">
+                    <span class="history-name">{{ session.videoName }}</span>
+                    <span class="history-meta">
+                      {{ formatTime(session.timestamp) }} · {{ session.messageCount }} 条消息
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </n-drawer-content>
+          </n-drawer>
+        </div>
+      </n-notification-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { useStore } from 'naive-ui'
+import { ref, nextTick, onMounted, watch } from 'vue'
+import { darkTheme, NIcon } from 'naive-ui'
 import {
-  NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider,
-  NButton, NCard, NInput, NIcon, NProgress, NGrid, NGi, NText,
-  NList, NListItem, NStatistic, NTag, NDivider, NEmpty, NAlert
+  NConfigProvider, NMessageProvider, NNotificationProvider,
+  NButton, NInput, NDrawer, NDrawerContent, NEmpty, NProgress
 } from 'naive-ui'
 import {
-  VideoCameraOutline, HomeOutline, ListOutline, CloudUploadOutline,
-  FilmOutline, PlayOutline, FlashOutline, BrainOutline, ChatboxOutline,
-  SyncOutline, CheckmarkCircleOutline, EllipseOutline, TimeOutline,
-  DocumentTextOutline, ChatbubblesOutline, SendOutline, LayersOutline,
-  ChatboxEllipsesOutline, VideocamOutline, CloseOutline
+  menuOutline,
+  cloudUploadOutline,
+  filmOutline,
+  closeOutline,
+  videocamOutline,
+  syncOutline,
+  checkmarkCircleOutline,
+  paperPlaneOutline
 } from '@vicons/ionicons5'
+import { useSessionStore } from './stores/session'
+import { marked } from 'marked'
+import hljs from 'highlight.js'
 
-const store = useStore()
+const store = useSessionStore()
+
+// Logo
+const logoUrl = new URL('../VideoBuddy.png', import.meta.url).href
+
+// Upload
+const uploadMode = ref<'file' | 'url'>('file')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const videoUrl = ref('')
+
+// Input
+const inputMessage = ref('')
+const inputRef = ref<HTMLTextAreaElement | null>(null)
+const messagesContainer = ref<HTMLElement | null>(null)
 
 // Theme
 const themeOverrides = {
   common: {
-    primaryColor: '#18a058',
-    primaryColorHover: '#36ad6a',
-    primaryColorPressed: '#0c7a43'
+    primaryColor: '#f59e0b',
+    primaryColorHover: '#fbbf24',
+    primaryColorPressed: '#d97706',
+    primaryColorSuppl: '#f59e0b',
+    borderRadius: '8px',
+    borderRadiusSmall: '6px'
+  },
+  Button: {
+    colorPrimary: '#f59e0b',
+    colorHoverPrimary: '#fbbf24',
+    colorPressedPrimary: '#d97706',
+    textColor: '#1a1614'
+  },
+  Input: {
+    color: '#292524',
+    colorFocus: '#292524',
+    border: '1px solid #44403c',
+    borderHover: '1px solid #f59e0b',
+    borderFocus: '1px solid #f59e0b'
+  },
+  Drawer: {
+    color: '#1f1d1c',
+    headerColor: '#1f1d1c',
+    titleTextColor: '#fef3c7'
+  },
+  Card: {
+    color: '#292524'
   }
 }
 
-// View state
-const view = ref<'home' | 'history' | 'session'>('home')
-const isDragOver = ref(false)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const previewFile = ref<File | null>(null)
-const questionInput = ref('')
-const isAsking = ref(false)
-const selectedSegment = ref<any>(null)
-const chatContainerRef = ref<HTMLElement | null>(null)
-const videoSummary = ref('')
-
-// Processing steps
-const processingSteps = [
-  { key: 'extracting', label: '提取视频帧' },
-  { key: 'captioning', label: '生成帧描述' },
-  { key: 'asr', label: '音频转写' },
-  { key: 'consolidating', label: '构建记忆' }
-]
-
-function isStepCompleted(key: string) {
-  const order = ['extracting', 'captioning', 'asr', 'consolidating', 'done']
-  const currentIndex = order.indexOf(store.processingStage)
-  const stepIndex = order.indexOf(key)
-  return currentIndex > stepIndex
-}
-
-// File handling
-function handleDrop(e: DragEvent) {
-  isDragOver.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    selectFile(files[0])
+// Configure marked
+marked.setOptions({
+  highlight: (code: string, lang: string) => {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value
+    }
+    return code
   }
+})
+
+function renderMarkdown(content: string): string {
+  return marked.parse(content) as string
 }
 
-function handleFileChange(e: Event) {
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+function handleFileSelect(e: Event) {
   const input = e.target as HTMLInputElement
-  if (input.files && input.files.length > 0) {
-    selectFile(input.files[0])
+  if (input.files && input.files[0]) {
+    store.setVideoFile(input.files[0])
   }
 }
 
-function selectFile(file: File) {
-  if (!file.type.startsWith('video/')) {
-    alert('请选择视频文件')
-    return
-  }
-  previewFile.value = file
-}
-
-async function handleUpload() {
-  if (!previewFile.value) return
-
-  const sessionId = await store.uploadVideo(previewFile.value)
-  if (sessionId) {
-    view.value = 'session'
-    // 自动开始理解
-    await store.startUnderstanding()
+function handleUrlSubmit() {
+  if (videoUrl.value.trim()) {
+    store.setVideoUrl(videoUrl.value.trim())
+    videoUrl.value = ''
   }
 }
 
-async function handleAsk() {
-  if (!questionInput.value.trim() || isAsking.value) return
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleSend()
+  }
+}
 
-  isAsking.value = true
-  const question = questionInput.value
-  questionInput.value = ''
+async function handleSend() {
+  if (!inputMessage.value.trim()) return
 
-  await store.askQuestion(question)
+  await store.sendMessage(inputMessage.value)
+  inputMessage.value = ''
 
-  isAsking.value = false
-
-  // 滚动到底部
   await nextTick()
-  if (chatContainerRef.value) {
-    chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight
+  scrollToBottom()
+}
+
+function autoResize() {
+  if (inputRef.value) {
+    inputRef.value.style.height = 'auto'
+    inputRef.value.style.height = Math.min(inputRef.value.scrollHeight, 200) + 'px'
   }
 }
 
-// Navigation
-function goHome() {
-  view.value = 'home'
-  store.clearCurrentSession()
-  previewFile.value = null
-  selectedSegment.value = null
-  videoSummary.value = ''
-}
-
-async function openSession(sessionId: string) {
-  await store.loadSession(sessionId)
-  if (store.currentSession?.has_understanding) {
-    await loadSummary()
-  }
-  view.value = 'session'
-}
-
-async function loadSessions() {
-  await store.fetchSessions()
-  view.value = 'history'
-}
-
-async function handleDeleteSession(sessionId: string) {
-  await store.deleteSession(sessionId)
-}
-
-// Load summary
-async function loadSummary() {
-  if (!store.currentSession) return
-  try {
-    const { api } = await import('./api/client')
-    const response = await api.getSummary(store.currentSession.session_id)
-    videoSummary.value = response.summary || ''
-  } catch (e) {
-    console.error('Failed to load summary:', e)
+function scrollToBottom() {
+  if (messagesContainer.value) {
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
 }
 
-// Utils
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+function formatTime(timestamp: number): string {
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前'
+  return date.toLocaleDateString('zh-CN')
 }
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+async function loadSession(sessionId: string) {
+  // TODO: Implement session loading
+  store.isHistoryOpen = false
 }
 
-function formatDate(timestamp: number | undefined): string {
-  if (!timestamp) return ''
-  return new Date(timestamp * 1000).toLocaleString('zh-CN')
-}
+// Watch for new messages to scroll
+watch(() => store.messages.length, () => {
+  nextTick(() => scrollToBottom())
+})
 
-// Load sessions on mount
 onMounted(() => {
-  store.fetchSessions()
+  inputRef.value?.focus()
 })
 </script>
 
 <style scoped>
 .app-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
-}
-
-.app-header {
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 16px 24px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #1a1614;
+  color: #fef3c7;
 }
 
-.logo {
+/* Header */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background-color: #1f1d1c;
+  border-bottom: 1px solid #44403c;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.header-left {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.logo-text {
-  font-size: 20px;
-  font-weight: 600;
-  color: #18a058;
+.logo-img {
+  height: 32px;
+  width: auto;
 }
 
-.header-actions {
+.logo-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fef3c7;
+}
+
+.header-right {
   display: flex;
   gap: 8px;
 }
 
+/* Main */
 .app-main {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-/* Home View */
-.home-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 48px;
 }
 
-.hero-section {
-  text-align: center;
-  padding: 48px 0;
-}
-
-.hero-title {
-  font-size: 48px;
-  font-weight: 700;
-  color: #18a058;
-  margin-bottom: 16px;
-}
-
-.hero-subtitle {
-  font-size: 20px;
-  color: #666;
-}
-
+/* Upload Section */
 .upload-section {
-  max-width: 800px;
-  margin: 0 auto;
-  width: 100%;
+  padding: 16px 0;
+  border-bottom: 1px solid #292524;
 }
 
-.upload-card {
-  padding: 24px;
+.upload-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.upload-zone {
-  border: 2px dashed #d9d9d9;
-  border-radius: 12px;
-  padding: 64px;
-  text-align: center;
+.tab {
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid #44403c;
+  border-radius: 8px;
+  color: #a8a29e;
   cursor: pointer;
-  transition: all 0.3s;
-}
-
-.upload-zone:hover,
-.upload-zone-active {
-  border-color: #18a058;
-  background: rgba(24, 160, 88, 0.05);
-}
-
-.file-input {
-  display: none;
-}
-
-.upload-icon {
-  margin-bottom: 16px;
-}
-
-.upload-text {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-
-.upload-link {
-  cursor: pointer;
-}
-
-.upload-hint {
+  transition: all 0.2s;
   font-size: 14px;
 }
 
-.preview-section {
-  margin-top: 24px;
+.tab:hover {
+  border-color: #f59e0b;
+  color: #fef3c7;
+}
+
+.tab.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #1a1614;
+  font-weight: 500;
+}
+
+.upload-zone {
+  border: 2px dashed #44403c;
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.upload-zone:hover {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-icon {
+  color: #f59e0b;
+}
+
+.upload-text {
+  color: #fef3c7;
+  font-size: 14px;
+}
+
+.upload-hint {
+  color: #a8a29e;
+  font-size: 12px;
+}
+
+.url-input-section {
+  max-width: 500px;
+}
+
+.video-preview {
+  margin-top: 12px;
+  padding: 12px;
+  background: #292524;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .preview-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex: 1;
+}
+
+/* Video Section */
+.video-section {
+  padding: 16px 0;
+  border-bottom: 1px solid #292524;
+}
+
+.video-player {
+  width: 100%;
+  max-height: 300px;
+  border-radius: 12px;
+  background: #000;
+}
+
+.video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px;
+  background: #292524;
+  border-radius: 12px;
+  color: #a8a29e;
+}
+
+/* Messages */
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 0;
+}
+
+.welcome-message {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.welcome-logo {
+  height: 64px;
+  width: auto;
   margin-bottom: 16px;
 }
 
-.upload-btn {
+.welcome-message h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #fef3c7;
+}
+
+.welcome-message p {
+  color: #a8a29e;
+  font-size: 14px;
+}
+
+.message-wrapper {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-wrapper.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.message-avatar img {
   width: 100%;
-}
-
-.error-alert {
-  margin-top: 16px;
-}
-
-.features-section {
-  margin-top: 48px;
-}
-
-.feature-card {
   height: 100%;
-  transition: transform 0.3s, box-shadow 0.3s;
+  object-fit: cover;
 }
 
-.feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+.user-avatar {
+  width: 100%;
+  height: 100%;
+  background: #44403c;
+  color: #a8a29e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.feature-header {
+.message-content {
+  max-width: 70%;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.message-bubble.user {
+  background: #3f3f46;
+  color: #fef3c7;
+  border-bottom-right-radius: 4px;
+}
+
+.message-bubble.assistant {
+  background: #292524;
+  color: #fef3c7;
+  border-bottom-left-radius: 4px;
+}
+
+.message-bubble.processing {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+}
+
+.processing-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.processing-dots span {
+  width: 8px;
+  height: 8px;
+  background: #f59e0b;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.processing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.processing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* Status Bar */
+.status-bar {
+  height: 32px;
+  background: #1f1d1c;
+  border-top: 1px solid #292524;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.status-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #18a058;
+  flex: 1;
 }
 
-/* Processing View */
-.processing-view {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 60vh;
+.status-icon {
+  color: #22c55e;
+  font-size: 14px;
 }
 
-.processing-card {
-  max-width: 500px;
-  width: 100%;
-  text-align: center;
+.status-icon.spinning {
+  color: #f59e0b;
+  animation: spin 1s linear infinite;
 }
 
-.processing-header {
-  margin-bottom: 32px;
-}
-
-.processing-header h2 {
-  margin: 16px 0 8px;
-}
-
-.processing-icon {
-  animation: rotate 2s linear infinite;
-}
-
-@keyframes rotate {
+@keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-.processing-steps {
-  margin-top: 32px;
-  text-align: left;
-}
-
-.processing-steps .n-list-item {
-  padding: 12px 0;
-}
-
-.processing-steps .n-list-item.active {
-  color: #18a058;
-  font-weight: 500;
-}
-
-.processing-steps .n-list-item.completed {
-  color: #18a058;
-}
-
-/* Session View */
-.session-view {
-  width: 100%;
-}
-
-.session-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-.session-left,
-.session-right {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.video-card .video-player {
-  background: #000;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-
-.video-element {
-  width: 100%;
-  max-height: 400px;
-  display: block;
-}
-
-.video-placeholder {
-  height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f5f5;
-}
-
-.video-info {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-/* Memory Timeline */
-.timeline {
-  position: relative;
-  height: 60px;
-  background: linear-gradient(90deg, #e8f5e9 0%, #c8e6c9 100%);
-  border-radius: 8px;
-  margin-top: 8px;
-}
-
-.timeline-item {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-}
-
-.timeline-marker {
-  width: 16px;
-  height: 16px;
-  background: #18a058;
-  border-radius: 50%;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.timeline-tooltip {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: white;
-  padding: 8px 12px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  min-width: 150px;
-  display: none;
-  z-index: 10;
-}
-
-.timeline-item:hover .timeline-tooltip {
-  display: block;
-}
-
-/* Chat */
-.chat-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-messages {
-  flex: 1;
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 16px 0;
-}
-
-.chat-message {
-  margin-bottom: 16px;
-}
-
-.message-question,
-.message-answer {
-  margin-bottom: 12px;
-}
-
-.message-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.status-text {
   font-size: 12px;
-  margin-bottom: 4px;
-  color: #18a058;
+  color: #a8a29e;
 }
 
-.message-question .message-label {
-  color: #18a058;
+.status-progress {
+  width: 120px;
 }
 
-.message-answer .message-label {
-  color: #2080f0;
+/* Input Area */
+.input-area {
+  padding: 16px 24px;
+  background: #1a1614;
+  border-top: 1px solid #292524;
+  flex-shrink: 0;
 }
 
-.message-content {
-  background: #f5f5f5;
-  padding: 12px;
-  border-radius: 8px;
-  line-height: 1.6;
-}
-
-.message-answer .message-content {
-  background: #e6f4ff;
-}
-
-.chat-empty {
-  padding: 48px;
-}
-
-.chat-input {
+.input-container {
   display: flex;
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.chat-input .n-input {
-  flex: 1;
-}
-
-/* Segments */
-.segments-card {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.segments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.segment-item {
-  padding: 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.segment-item:hover,
-.segment-item.active {
-  border-color: #18a058;
-  background: #fafffe;
-}
-
-.segment-time {
-  font-size: 12px;
-  color: #18a058;
-  margin-bottom: 4px;
-}
-
-.segment-summary {
-  font-size: 14px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.segment-events {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.segment-detail {
-  padding-top: 12px;
-}
-
-.segment-entities,
-.segment-events-detail {
-  margin-top: 8px;
-}
-
-/* History View */
-.history-view {
+  align-items: flex-end;
   max-width: 800px;
   margin: 0 auto;
 }
 
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.input-field {
+  flex: 1;
+  background: #292524;
+  border: 1px solid #44403c;
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: #fef3c7;
+  font-size: 14px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+  max-height: 200px;
+  min-height: 48px;
 }
 
-.history-header h2 {
-  margin: 0;
+.input-field:focus {
+  border-color: #f59e0b;
 }
 
-.session-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
+.input-field::placeholder {
+  color: #a8a29e;
 }
 
-.session-info {
+.send-btn {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.input-hint {
+  text-align: center;
+  font-size: 12px;
+  color: #57534e;
+  margin-top: 8px;
+}
+
+/* History Drawer */
+.history-empty {
+  padding: 48px 24px;
+}
+
+.history-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.session-actions {
-  display: flex;
   gap: 8px;
 }
 
-.summary-card {
-  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #292524;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
-.summary-card .n-card__content {
-  line-height: 1.8;
+.history-item:hover {
+  background: #44403c;
 }
 
-/* Responsive */
-@media (max-width: 1024px) {
-  .session-layout {
-    grid-template-columns: 1fr;
-  }
+.history-icon {
+  width: 40px;
+  height: 40px;
+  background: #1a1614;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
 }
 
-@media (max-width: 768px) {
-  .hero-title {
-    font-size: 32px;
-  }
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
 
-  .hero-subtitle {
-    font-size: 16px;
-  }
+.history-name {
+  font-size: 14px;
+  color: #fef3c7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .upload-zone {
-    padding: 32px;
-  }
+.history-meta {
+  font-size: 12px;
+  color: #a8a29e;
+}
 
-  .video-info {
-    grid-template-columns: 1fr;
-  }
+/* Highlight.js Theme Override */
+:deep(.hljs) {
+  background: #1a1614 !important;
+  color: #fef3c7 !important;
+  padding: 12px !important;
+  border-radius: 8px !important;
+  overflow-x: auto !important;
 }
 </style>

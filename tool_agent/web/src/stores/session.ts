@@ -1,226 +1,330 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { api, Session, MemoryData, Segment, setAuthToken } from '../api/client'
+import axios from 'axios'
+
+const API_BASE = '/api'
+const AUTH_TOKEN = 'sk-admin'
+
+const apiClient = axios.create({
+  baseURL: API_BASE,
+  timeout: 300000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+apiClient.defaults.headers.common['Authorization'] = `Bearer ${AUTH_TOKEN}`
+
+// ========== 类型定义 ==========
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
+export interface VideoInfo {
+  name: string
+  url: string | null
+  file: File | null
+  duration: number
+  framesCount: number
+}
+
+export interface AnalysisResult {
+  summary: string
+  duration: number
+  framesExtracted: number
+  audioTranscribed: string
+  keyTags: string[]
+  processingTime: number
+}
+
+export interface SessionSummary {
+  sessionId: string
+  videoName: string
+  lastMessage: string
+  timestamp: number
+  messageCount: number
+}
+
+// ========== Store ==========
 
 export const useSessionStore = defineStore('session', () => {
   // State
-  const currentSession = ref<Session | null>(null)
-  const memoryData = ref<MemoryData | null>(null)
-  const conversations = ref<{ question: string; answer: string; timestamp: number }[]>([])
-  const isUploading = ref(false)
+  const messages = ref<Message[]>([])
   const isProcessing = ref(false)
   const processingStage = ref('')
   const processingProgress = ref(0)
   const processingMessage = ref('')
   const error = ref<string | null>(null)
-  const sessions = ref<Session[]>([])
 
-  // EventSource for SSE
-  let progressEventSource: EventSource | null = null
+  const videoInfo = ref<VideoInfo | null>(null)
+  const analysisResult = ref<AnalysisResult | null>(null)
+  const historySessions = ref<SessionSummary[]>([])
+  const isHistoryOpen = ref(false)
+  const isStreaming = ref(false)
+  const streamingContent = ref('')
+
+  let eventSource: EventSource | null = null
 
   // Computed
-  const hasSession = computed(() => currentSession.value !== null)
-  const hasMemory = computed(() => memoryData.value !== null && memoryData.value.short_term.count > 0)
-  const shortTermFrames = computed(() => memoryData.value?.short_term.frames || [])
-  const longTermSegments = computed(() => memoryData.value?.long_term.segments || [])
+  const hasVideo = computed(() => videoInfo.value !== null)
+  const hasAnalysis = computed(() => analysisResult.value !== null)
+  const canSend = computed(() => messages.value.length > 0 || hasVideo.value)
 
   // Actions
-  async function uploadVideo(file: File): Promise<string | null> {
-    isUploading.value = true
+  function generateId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2)
+  }
+
+  async function sendMessage(content: string) {
+    if (!content.trim()) return
+
+    // Add user message
+    const userMsg: Message = {
+      id: generateId(),
+      role: 'user',
+      content: content.trim(),
+      timestamp: Date.now()
+    }
+    messages.value.push(userMsg)
+
+    // If no video, use chat-only API
+    if (!hasVideo.value) {
+      await sendChatOnlyMessage(content)
+      return
+    }
+
+    // With video - use video understanding API
+    await sendVideoQuestion(content)
+  }
+
+  async function sendChatOnlyMessage(content: string) {
+    isProcessing.value = true
     error.value = null
 
+    const assistantMsg: Message = {
+      id: generateId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    }
+    messages.value.push(assistantMsg)
+
     try {
-      const response = await api.createSession(file)
-      currentSession.value = {
-        session_id: response.session_id,
-        video_name: response.video_name,
-        video_path: response.video_path,
-        video_duration: 0,
-        status: response.status,
-        total_frames: 0,
-        total_segments: 0,
-        has_understanding: false,
-        conversation_count: 0
-      }
-      return response.session_id
+      const response = await apiClient.post('/chat/stream', {
+        messages: messages.value.map(m => ({ role: m.role, content: m.content }))
+      }, {
+        responseType: 'text'
+      })
+
+      // Simple non-streaming response for now
+      assistantMsg.content = response.data.choices[0].message.content
     } catch (e: any) {
-      error.value = e.response?.data?.detail || '上传失败'
-      return null
+      assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
     } finally {
-      isUploading.value = false
+      isProcessing.value = false
     }
   }
 
-  async function loadSession(sessionId: string) {
-    try {
-      const session = await api.getSession(sessionId)
-      currentSession.value = session
-      if (session.has_understanding) {
-        await loadMemory()
-        await loadConversations()
-      }
-    } catch (e: any) {
-      error.value = e.response?.data?.detail || '加载失败'
-    }
-  }
-
-  async function startUnderstanding() {
-    if (!currentSession.value) return
+  async function sendVideoQuestion(content: string) {
+    if (!videoInfo.value?.file) return
 
     isProcessing.value = true
-    processingStage.value = 'starting'
-    processingProgress.value = 0
-    processingMessage.value = '准备开始...'
+    isStreaming.value = true
+    streamingContent.value = ''
     error.value = null
 
-    try {
-      await api.startUnderstand(currentSession.value.session_id)
-      startProgressStream()
-    } catch (e: any) {
-      error.value = e.response?.data?.detail || '启动失败'
-      isProcessing.value = false
+    const assistantMsg: Message = {
+      id: generateId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
     }
-  }
+    messages.value.push(assistantMsg)
 
-  function startProgressStream() {
-    if (!currentSession.value) return
+    try {
+      // For streaming, we use SSE
+      // First check if session exists, if not create one
+      let sessionId = sessionStorage.getItem('currentSessionId')
 
-    stopProgressStream()
-
-    progressEventSource = api.createProgressStream(currentSession.value.session_id)
-
-    progressEventSource.onmessage = (event) => {
-      const [stage, progress, message] = (event.data as string).split('|')
-      processingStage.value = stage
-      processingProgress.value = parseFloat(progress) || 0
-      processingMessage.value = message || ''
-
-      if (stage === 'done') {
-        isProcessing.value = false
-        loadMemory()
-        loadConversations()
-        loadSession(currentSession.value!.session_id)
-      } else if (stage === 'error') {
-        isProcessing.value = false
-        error.value = message || '处理出错'
+      if (!sessionId) {
+        const formData = new FormData()
+        formData.append('video', videoInfo.value.file)
+        const resp = await apiClient.post('/sessions', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        sessionId = resp.data.session_id
+        sessionStorage.setItem('currentSessionId', sessionId)
       }
-    }
 
-    progressEventSource.onerror = () => {
-      isProcessing.value = false
-      error.value = '连接中断'
-      stopProgressStream()
-    }
-  }
+      // Start understanding if not done
+      if (!hasAnalysis.value) {
+        await startVideoUnderstanding(sessionId)
+      }
 
-  function stopProgressStream() {
-    if (progressEventSource) {
-      progressEventSource.close()
-      progressEventSource = null
-    }
-  }
-
-  async function loadMemory() {
-    if (!currentSession.value) return
-
-    try {
-      memoryData.value = await api.getMemory(currentSession.value.session_id)
-    } catch (e: any) {
-      console.error('Failed to load memory:', e)
-    }
-  }
-
-  async function loadConversations() {
-    if (!currentSession.value) return
-
-    try {
-      const response = await api.getConversations(currentSession.value.session_id)
-      conversations.value = response.conversations
-    } catch (e: any) {
-      console.error('Failed to load conversations:', e)
-    }
-  }
-
-  async function askQuestion(question: string): Promise<string | null> {
-    if (!currentSession.value) return null
-
-    try {
-      const response = await api.askQuestion(currentSession.value.session_id, question)
-      conversations.value.push({
-        question: response.question,
-        answer: response.answer,
-        timestamp: response.timestamp
+      // Send question via streaming
+      const streamResp = await fetch(`${API_BASE}/sessions/${sessionId}/question/stream?question=${encodeURIComponent(content)}`, {
+        headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
       })
-      return response.answer
-    } catch (e: any) {
-      error.value = e.response?.data?.detail || '问答失败'
-      return null
-    }
-  }
 
-  async function fetchSessions() {
-    try {
-      const response = await api.listSessions()
-      sessions.value = response.sessions
-    } catch (e: any) {
-      console.error('Failed to fetch sessions:', e)
-    }
-  }
+      const reader = streamResp.body?.getReader()
+      const decoder = new TextDecoder()
 
-  async function deleteSession(sessionId: string) {
-    try {
-      await api.deleteSession(sessionId)
-      sessions.value = sessions.value.filter(s => s.session_id !== sessionId)
-      if (currentSession.value?.session_id === sessionId) {
-        currentSession.value = null
-        memoryData.value = null
-        conversations.value = []
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value)
+          streamingContent.value += chunk
+          assistantMsg.content = streamingContent.value
+        }
       }
     } catch (e: any) {
-      error.value = e.response?.data?.detail || '删除失败'
+      assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
+    } finally {
+      isProcessing.value = false
+      isStreaming.value = false
     }
   }
 
-  function clearCurrentSession() {
-    stopProgressStream()
-    currentSession.value = null
-    memoryData.value = null
-    conversations.value = []
-    isProcessing.value = false
-    processingStage.value = ''
+  async function startVideoUnderstanding(sessionId: string) {
+    processingStage.value = 'starting'
     processingProgress.value = 0
-    processingMessage.value = ''
+    processingMessage.value = '准备分析...'
+
+    return new Promise<void>((resolve, reject) => {
+      eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream`, {
+        withCredentials: true
+      })
+
+      eventSource.onmessage = (event) => {
+        const data = event.data.split('|')
+        if (data.length >= 3) {
+          processingStage.value = data[0]
+          processingProgress.value = parseFloat(data[1]) || 0
+          processingMessage.value = data[2] || ''
+
+          if (data[0] === 'done') {
+            isProcessing.value = false
+            analysisResult.value = {
+              summary: '视频分析完成',
+              duration: videoInfo.value?.duration || 0,
+              framesExtracted: parseInt(data[1]) || 16,
+              audioTranscribed: '',
+              keyTags: [],
+              processingTime: 0
+            }
+            closeEventSource()
+            resolve()
+          }
+        }
+      }
+
+      eventSource.onerror = () => {
+        error.value = '连接中断'
+        isProcessing.value = false
+        closeEventSource()
+        reject(new Error('SSE connection error'))
+      }
+    })
+  }
+
+  function closeEventSource() {
+    if (eventSource) {
+      eventSource.close()
+      eventSource = null
+    }
+  }
+
+  function setVideoFile(file: File) {
+    videoInfo.value = {
+      name: file.name,
+      url: null,
+      file: file,
+      duration: 0,
+      framesCount: 0
+    }
+    // Clear previous analysis
+    analysisResult.value = null
+    messages.value = []
+    sessionStorage.removeItem('currentSessionId')
+  }
+
+  function setVideoUrl(url: string) {
+    videoInfo.value = {
+      name: url.split('/').pop() || '视频',
+      url: url,
+      file: null,
+      duration: 0,
+      framesCount: 0
+    }
+    analysisResult.value = null
+    messages.value = []
+    sessionStorage.removeItem('currentSessionId')
+  }
+
+  function clearVideo() {
+    videoInfo.value = null
+    analysisResult.value = null
+    messages.value = []
+    sessionStorage.removeItem('currentSessionId')
+  }
+
+  async function loadHistory() {
+    try {
+      const response = await apiClient.get('/sessions')
+      historySessions.value = response.data.sessions.map((s: any) => ({
+        sessionId: s.session_id,
+        videoName: s.video_name,
+        lastMessage: '',
+        timestamp: s.created_at || Date.now(),
+        messageCount: s.conversation_count || 0
+      }))
+    } catch (e) {
+      console.error('Failed to load history:', e)
+    }
+  }
+
+  function toggleHistory() {
+    isHistoryOpen.value = !isHistoryOpen.value
+    if (isHistoryOpen.value) {
+      loadHistory()
+    }
+  }
+
+  function clearError() {
     error.value = null
   }
 
   return {
     // State
-    currentSession,
-    memoryData,
-    conversations,
-    isUploading,
+    messages,
     isProcessing,
     processingStage,
     processingProgress,
     processingMessage,
     error,
-    sessions,
+    videoInfo,
+    analysisResult,
+    historySessions,
+    isHistoryOpen,
+    isStreaming,
 
     // Computed
-    hasSession,
-    hasMemory,
-    shortTermFrames,
-    longTermSegments,
+    hasVideo,
+    hasAnalysis,
+    canSend,
 
     // Actions
-    uploadVideo,
-    loadSession,
-    startUnderstanding,
-    loadMemory,
-    loadConversations,
-    askQuestion,
-    fetchSessions,
-    deleteSession,
-    clearCurrentSession
+    sendMessage,
+    setVideoFile,
+    setVideoUrl,
+    clearVideo,
+    loadHistory,
+    toggleHistory,
+    clearError
   }
 })

@@ -1,6 +1,6 @@
 {
-  "name": "video-understanding-agent-web",
-  "version": "2.0.0",
+  "name": "videobuddy-web",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,12 +13,15 @@
     "naive-ui": "^2.38.1",
     "pinia": "^2.1.7",
     "axios": "^1.6.7",
-    "@vicons/ionicons5": "^0.12.0"
+    "@vicons/ionicons5": "^0.12.0",
+    "marked": "^12.0.0",
+    "highlight.js": "^11.9.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
     "typescript": "^5.4.2",
     "vite": "^5.1.6",
-    "vue-tsc": "^2.0.6"
+    "vue-tsc": "^2.0.6",
+    "sass": "^1.72.0"
   }
 }
