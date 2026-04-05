@@ -1,37 +1,37 @@
-# UAVideo
+# VideoBuddy - 视频理解智能体
 
-**Tool-Augmented Multimodal Agent for Video Understanding**
+**基于工具链增强的多模态视频理解系统**
 
-> 🎓 **Graduation Thesis Project** - Enables text-only LLMs to understand and process visual content (images/videos) through a local toolchain, with OpenAI-compatible API for VLMEvalKit integration.
+> 毕业设计项目 - 让文本大模型通过本地工具链理解视觉内容（图片/视频），提供 OpenAI 兼容 API，可接入 VLMEvalKit 测评框架。
 
-## Features
+## 功能特性
 
-- **OpenAI-Compatible API** - Easy integration with existing frameworks
-- **Local Vision Tools** - No cloud vision API required
-  - Image captioning via vLLM-deployed Qwen3-VL-4B
-  - Audio transcription via vLLM-deployed Qwen3-ASR-1.7B
-  - Adaptive video frame extraction
-- **Long/Short-Term Memory** - Hierarchical memory management for video understanding
-- **ReAct Reasoning** - Tool-augmented reasoning for complex video QA
+- **OpenAI 兼容 API** - 轻松对接现有框架
+- **本地视觉工具** - 无需云端视觉 API
+  - 图像描述：vLLM 部署的 Qwen3-VL-4B
+  - 音频转写：vLLM 部署的 Qwen3-ASR-1.7B
+  - 自适应视频抽帧
+- **长短期记忆** - 分层记忆管理
+- **ReAct 推理** - 工具增强的复杂视频问答
 
-## Architecture
+## 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    VLMEvalKit / OpenAI Client               │
+│                    VLMEvalKit / OpenAI 客户端               │
 └─────────────────────┬─────────────────────────────────────┘
-                      │ OpenAI-compatible API (:18080)
+                      │ OpenAI 兼容 API
 ┌─────────────────────▼─────────────────────────────────────┐
-│                   FastAPI Server                            │
+│                   FastAPI 服务端                            │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │              ReAct Orchestrator                      │  │
+│  │              ReAct 编排器                            │  │
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │  │
-│  │  │  Short-term │ │  Long-term  │ │   Tools     │  │  │
-│  │  │   Memory    │ │   Memory    │ │             │  │  │
-│  │  └─────────────┘ └─────────────┘ │  ┌─────────┐ │  │  │
-│  │                                  │  │ Caption │ │  │  │
-│  │                                  │  │   ASR   │ │  │  │
-│  │                                  │  │  Video  │ │  │  │
+│  │  │  短期记忆   │ │  长期记忆   │ │   工具链    │  │  │
+│  │  └─────────────┘ └─────────────┘ │             │  │  │
+│  │                                  │  ┌─────────┐ │  │  │
+│  │                                  │  │ 描述    │ │  │  │
+│  │                                  │  │ ASR     │ │  │  │
+│  │                                  │  │ 视频    │ │  │  │
 │  │                                  │  └─────────┘ │  │  │
 │  │                                  └─────────────┘  │  │
 │  └─────────────────────────────────────────────────────┘  │
@@ -40,241 +40,225 @@
         ┌─────────────┴─────────────┐
         │                           │
 ┌───────▼───────┐           ┌──────▼────────┐
-│  vLLM Server  │           │  Doubao API    │
-│  (Caption +   │           │  (Language     │
-│   ASR)        │           │   Reasoning)   │
-│  :8008        │           │                │
+│  vLLM 服务    │           │  豆包 API     │
+│  (描述 + ASR) │           │  (语言推理)   │
+│  :8802/:8803  │           │               │
 └───────────────┘           └───────────────┘
 ```
 
-## Quick Start
+## 端口分配
 
-### 1. Install Dependencies
+| 服务 | 内网端口 | 公网端口 | 用途 |
+|------|---------|---------|------|
+| 后端 API | 8800 | 15576 | FastAPI 服务 |
+| 前端 Web | 8801 | 15577 | Vite 开发服务器 |
+| vLLM Caption | 8802 | 15578 | 图像描述模型 |
+| vLLM ASR | 8803 | 15579 | 音频转写模型 |
+| vLLM 备用 | 8804 | 15580 | 预留 |
+| vLLM 备用 | 8805 | 15581 | 预留 |
+
+**公网访问地址**: http://js3.blockelite.cn
+
+## 快速启动
+
+### 1. 安装依赖
 
 ```bash
-cd tool_agent
-pip install -r requirements.txt
+# 安装 Python 依赖
+cd /mnt/data/gk
+pip install -r tool_agent/requirements.txt
+
+# 安装 Node.js 依赖（前端）
+cd tool_agent/web
+npm install
 ```
 
-### 2. Deploy Local Vision Models
+### 2. 部署本地视觉模型
 
-Deploy Qwen3-VL-4B and Qwen3-ASR-1.7B using vLLM:
+使用 vLLM 部署 Qwen3-VL-4B 和 Qwen3-ASR-1.7B：
 
 ```bash
-# Caption Model (Port 8008)
-vllm serve Qwen3-VL-4B --host 0.0.0.0 --port 8008
+# Caption 模型（端口 8802）
+vllm serve Qwen3-VL-4B --host 0.0.0.0 --port 8802
 
-# ASR Model (Port 8009)
-vllm serve Qwen3-ASR-1.7B --host 0.0.0.0 --port 8009
+# ASR 模型（端口 8803）
+vllm serve Qwen3-ASR-1.7B --host 0.0.0.0 --port 8803
 ```
 
-### 3. Configure Environment
+### 3. 配置环境变量
 
 ```bash
+# 复制环境变量模板
 cp tool_agent/configs/.env.example tool_agent/configs/.env
-# Edit .env with your Doubao API credentials
+# 编辑 .env，填入豆包 API 凭证
 ```
 
-### 4. Start the Server
+### 4. 启动服务
 
 ```bash
+# 启动后端 API（端口 8800）
+cd /mnt/data/gk
 bash start_server.sh
+
+# 新开终端，启动前端（端口 8801）
+cd /mnt/data/gk
+bash start_frontend.sh
 ```
 
-Or manually:
+### 5. 访问服务
 
-```bash
-cd tool_agent
-AUTH_TOKEN=sk-admin PORT=18080 \
-CORE_LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3 \
-CORE_LLM_API_KEY=your-api-key \
-CORE_LLM_MODEL=doubao-seed-1-8-251228 \
-python -m tool_agent.server
-```
+| 服务 | 地址 |
+|------|------|
+| 前端界面 | http://js3.blockelite.cn:15577 |
+| API 文档 | http://js3.blockelite.cn:15576/docs |
+| 健康检查 | http://js3.blockelite.cn:15576/health |
 
-### 5. Test the API
+## API 使用
 
-```bash
-curl -X POST http://localhost:18080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-admin" \
-  -d '{
-    "model": "tool-agent",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-
-## API Usage
-
-### OpenAI-Compatible Endpoint
+### OpenAI 兼容端点
 
 ```python
-import openai
+from openai import OpenAI
 
-client = openai.OpenAI(
+client = OpenAI(
     api_key="sk-admin",
-    base_url="http://localhost:18080/v1"
+    base_url="http://js3.blockelite.cn:15576/v1"
 )
 
 response = client.chat.completions.create(
     model="tool-agent",
     messages=[
-        {"role": "user", "content": "Describe this video"}
+        {"role": "user", "content": "描述这个视频"}
     ]
 )
 ```
 
-### With Images
-
-```python
-import base64
-
-# Encode image
-with open("image.jpg", "rb") as f:
-    b64 = base64.b64encode(f.read()).decode()
-
-response = client.chat.completions.create(
-    model="tool-agent",
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            {"type": "text", "text": "Describe this image"}
-        ]
-    }]
-)
-```
-
-## Benchmarks
-
-Run evaluations on multiple datasets:
+### 测试 API
 
 ```bash
-# DREAM-1K (event understanding)
-python bench/evaluate.py --model agent --dataset dream1k --max-samples 50
-
-# MMBench-Video (open QA)
-python bench/evaluate.py --model agent --dataset mmbench_video --max-samples 50
-
-# MVBench (multiple choice)
-python bench/evaluate.py --model agent --dataset mvbench --max-samples 50
-
-# MovieChat-1K (global + breakpoint QA)
-python bench/evaluate.py --model agent --dataset moviechat1k --max-samples 50
+curl -X POST http://js3.blockelite.cn:15576/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-admin" \
+  -d '{
+    "model": "tool-agent",
+    "messages": [{"role": "user", "content": "你好"}]
+  }'
 ```
 
-## Configuration
+## 视频测评
 
-### Environment Variables
+在多个数据集上运行测评：
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HOST` | Server host | `0.0.0.0` |
-| `PORT` | Server port | `18080` |
-| `AUTH_TOKEN` | API auth token | `sk-admin` |
-| `CORE_LLM_BASE_URL` | Doubao API URL | - |
-| `CORE_LLM_API_KEY` | Doubao API key | - |
-| `CORE_LLM_MODEL` | Doubao model name | `doubao-seed-1-8-251228` |
-| `VLLM_BASE_URL` | vLLM server URL | `http://localhost:8008/v1` |
-| `VLLM_CAPTION_MODEL` | Caption model | `Qwen3-VL-4B` |
-| `VLLM_ASR_MODEL` | ASR model | `Qwen3-ASR-1.7B` |
-| `MAX_FRAMES` | Max frames per video | `16` |
-| `MAX_EVIDENCE_CHARS` | Max evidence chars | `12000` |
+```bash
+# 设置数据目录
+export LMUData=/mnt/data/gk/LMUData
 
-## Project Structure
+# 运行推理（不调用 LLM 评判，节省成本）
+PYTHONUSERBASE=/mnt/data/gk/.pyuser \
+python3 /mnt/data/gk/VLMEvalKit/run_api.py \
+  --data DREAM-1K_8frame moviechat1k_breakpoint_8frame moviechat1k_global_8frame_limit0.01 \
+  --model tool-agent \
+  --base-url http://js3.blockelite.cn:15576/v1 \
+  --key sk-admin \
+  --mode infer \
+  --api-nproc 16 \
+  --timeout 300 \
+  --retry 2 \
+  --max-samples 50 \
+  --work-dir /mnt/data/gk/outputs
+```
+
+## 配置说明
+
+### 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `HOST` | 服务监听地址 | `0.0.0.0` |
+| `PORT` | 服务端口 | `8800` |
+| `AUTH_TOKEN` | API 认证令牌 | `sk-admin` |
+| `CORE_LLM_BASE_URL` | 豆包 API 地址 | - |
+| `CORE_LLM_API_KEY` | 豆包 API 密钥 | - |
+| `CORE_LLM_MODEL` | 豆包模型名称 | `doubao-seed-1-8-251228` |
+| `VLLM_BASE_URL` | vLLM 服务地址 | `http://localhost:8802/v1` |
+| `MAX_FRAMES` | 视频最大抽帧数 | `16` |
+| `MAX_EVIDENCE_CHARS` | 最大证据字符数 | `12000` |
+
+## 项目结构
 
 ```
 UAVideo/
-├── tool_agent/              # Main agent implementation
-│   ├── server.py           # FastAPI server
-│   ├── orchestrator.py     # ReAct orchestrator
-│   ├── memory.py          # Memory management
-│   ├── session.py          # Session management
-│   ├── core_llm.py        # Core LLM client
-│   ├── settings.py         # Configuration
-│   ├── cache.py            # Disk cache
-│   ├── tools/              # Tool implementations
-│   │   ├── caption.py     # Image captioning
-│   │   ├── asr.py         # Audio transcription
-│   │   ├── video.py       # Frame extraction
-│   │   └── vllm_client.py # vLLM client
-│   └── prompts/            # All prompts (markdown)
-│       ├── caption.md
-│       ├── asr.md
-│       ├── video_summary.md
-│       ├── qa.md
-│       ├── benchmark.md
-│       └── frame_extraction.md
-├── bench/                   # Benchmarking scripts
-│   ├── evaluate.py         # Unified evaluation
-│   ├── test_apis.py        # API tests
-│   └── config_loader.py    # Config utilities
-├── VLMEvalKit/              # Evaluation toolkit (modified)
-├── LMUData/                 # Dataset storage
-│   └── datasets/
-│       ├── DREAM-1K/
-│       ├── MMBench-Video/
-│       ├── MovieChat-1K-test/
-│       └── MVBench/
-├── outputs/                 # Evaluation outputs
-├── pretrained_models/        # Model configurations
+├── tool_agent/              # 智能体核心实现
+│   ├── server.py           # FastAPI 服务
+│   ├── orchestrator.py     # ReAct 编排器
+│   ├── memory.py           # 记忆管理
+│   ├── session.py         # 会话管理
+│   ├── core_llm.py        # 核心 LLM 客户端
+│   ├── settings.py        # 配置管理
+│   ├── cache.py           # 磁盘缓存
+│   ├── tools/             # 工具实现
+│   │   ├── caption.py    # 图像描述
+│   │   ├── asr.py        # 音频转写
+│   │   ├── video.py     # 视频抽帧
+│   │   └── vllm_client.py
+│   ├── prompts/           # 所有提示词（Markdown）
+│   │   ├── caption.md
+│   │   ├── asr.md
+│   │   ├── video_summary.md
+│   │   ├── qa.md
+│   │   └── benchmark.md
+│   └── web/              # 前端界面
+│       ├── src/
+│       │   ├── App.vue
+│       │   ├── stores/
+│       │   └── api/
+│       └── public/
+├── bench/                  # 测评脚本
+├── VLMEvalKit/            # 测评工具包（已修改）
+├── LMUData/               # 数据集存储
+├── outputs/               # 测评输出
+├── pretrained_models/     # 模型配置
 │   └── doubao-1.8/
-└── start_server.sh          # One-click server startup
+├── start_server.sh         # 后端启动脚本
+└── start_frontend.sh       # 前端启动脚本
 ```
 
-## Memory System
+## 记忆系统
 
-### Short-Term Memory
-- Sliding window of recent frames (configurable: 50 frames)
-- Auto-pruning by age (default: 5 minutes)
-- Frame-level captions and audio transcription
+### 短期记忆
+- 最近帧的滑动窗口（默认 50 帧）
+- 按时间自动淘汰（默认 5 分钟）
+- 帧级描述和音频转写
 
-### Long-Term Memory
-- Semantic segments extracted from short-term memory
-- Keyword-based retrieval for relevant segments
-- Configurable max segments (default: 20)
+### 长期记忆
+- 从短期记忆提炼的语义片段
+- 基于关键词检索相关片段
+- 可配置最大片段数（默认 20）
 
-## Tool Chain
+## 提示词
 
-### Video Frame Extraction
-- Adaptive extraction based on color histogram differences
-- Uniform extraction as fallback
-- Configurable min/max frames
+所有提示词都提取到 `tool_agent/prompts/` 目录下，便于定制：
 
-### Image Captioning
-- vLLM-deployed Qwen3-VL-4B
-- Base64-encoded images
-- Configurable prompts (see `tool_agent/prompts/`)
+| 文件 | 用途 |
+|------|------|
+| `caption.md` | 图像描述提示词 |
+| `asr.md` | 音频转写提示词 |
+| `video_summary.md` | 视频摘要生成 |
+| `qa.md` | 问答任务 |
+| `benchmark.md` | 测评任务 |
+| `frame_extraction.md` | 帧提取策略 |
 
-### ASR (Audio Transcription)
-- vLLM-deployed Qwen3-ASR-1.7B
-- Audio extracted from video via ffmpeg
-- Supports prompt context
-
-## Prompts
-
-All prompts are extracted into `tool_agent/prompts/` for easy customization:
-
-| File | Purpose |
-|------|---------|
-| `caption.md` | Image captioning prompts |
-| `asr.md` | Audio transcription prompts |
-| `video_summary.md` | Video summary generation |
-| `qa.md` | Question answering |
-| `benchmark.md` | Benchmark evaluation |
-| `frame_extraction.md` | Frame extraction |
-
-## License
+## 许可证
 
 MIT License
 
-## Citation
+## 引用
 
-If you use this project for research, please cite:
+如果您在研究中使用了本项目，请引用：
 
 ```bibtex
 @misc{uavideo2024,
-  title={UAVideo: Tool-Augmented Multimodal Agent for Video Understanding},
+  title={VideoBuddy: 视频理解智能体},
   author={},
   year={2024},
   url={https://github.com/ymir-twice/UAVideo}

@@ -7,7 +7,7 @@ set -e  # 遇到错误立即退出
 
 # 配置
 export HOST=${HOST:-"0.0.0.0"}
-export PORT=${PORT:-"18080"}
+export PORT=${PORT:-"8800"}
 export AUTH_TOKEN=${AUTH_TOKEN:-"sk-admin"}
 
 # 豆包配置
