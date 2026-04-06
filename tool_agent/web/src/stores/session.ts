@@ -189,39 +189,49 @@ export const useSessionStore = defineStore('session', () => {
     processingMessage.value = '准备分析...'
 
     return new Promise<void>((resolve, reject) => {
-      eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream?token=${AUTH_TOKEN}`, {
-        withCredentials: true
-      })
+      // First, call /understand to START the processing
+      apiClient.post(`/sessions/${sessionId}/understand`)
+        .then(() => {
+          // Then connect to SSE stream to listen for progress
+          eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream?token=${AUTH_TOKEN}`, {
+            withCredentials: true
+          })
 
-      eventSource.onmessage = (event) => {
-        const data = event.data.split('|')
-        if (data.length >= 3) {
-          processingStage.value = data[0]
-          processingProgress.value = parseFloat(data[1]) || 0
-          processingMessage.value = data[2] || ''
+          eventSource.onmessage = (event) => {
+            const data = event.data.split('|')
+            if (data.length >= 3) {
+              processingStage.value = data[0]
+              processingProgress.value = parseFloat(data[1]) || 0
+              processingMessage.value = data[2] || ''
 
-          if (data[0] === 'done') {
-            isProcessing.value = false
-            analysisResult.value = {
-              summary: '视频分析完成',
-              duration: videoInfo.value?.duration || 0,
-              framesExtracted: parseInt(data[1]) || 16,
-              audioTranscribed: '',
-              keyTags: [],
-              processingTime: 0
+              if (data[0] === 'done') {
+                isProcessing.value = false
+                analysisResult.value = {
+                  summary: '视频分析完成',
+                  duration: videoInfo.value?.duration || 0,
+                  framesExtracted: parseInt(data[1]) || 16,
+                  audioTranscribed: '',
+                  keyTags: [],
+                  processingTime: 0
+                }
+                closeEventSource()
+                resolve()
+              }
             }
-            closeEventSource()
-            resolve()
           }
-        }
-      }
 
-      eventSource.onerror = () => {
-        error.value = '连接中断'
-        isProcessing.value = false
-        closeEventSource()
-        reject(new Error('SSE connection error'))
-      }
+          eventSource.onerror = () => {
+            error.value = '连接中断'
+            isProcessing.value = false
+            closeEventSource()
+            reject(new Error('SSE connection error'))
+          }
+        })
+        .catch((e) => {
+          error.value = `启动失败: ${e.response?.data?.detail || e.message}`
+          isProcessing.value = false
+          reject(e)
+        })
     })
   }
 
