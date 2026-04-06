@@ -569,23 +569,24 @@ class VideoUnderstandingOrchestrator:
 
         context = "\n\n".join(context_parts)
 
+        # 构建video_info
+        if session.understanding_result:
+            video_info_str = f"视频时长: {session.video_duration:.1f}秒\n总帧数: {session.total_frames_processed}"
+        else:
+            video_info_str = "视频尚未处理完成"
+
         # 构建prompt
         prompt = f"""视频问答任务。请根据提供的视频记忆信息回答用户问题。
 
 如果记忆信息不足以回答问题，请说明"根据视频内容无法确定"，不要编造答案。
 
-{video_info}
+{video_info_str}
 
 {context}
 
 用户问题: {question}
 
 请给出准确、简洁的回答："""
-
-        if session.understanding_result:
-            prompt = prompt.replace("{video_info}", f"视频时长: {session.video_duration:.1f}秒\n总帧数: {session.total_frames_processed}")
-        else:
-            prompt = prompt.replace("{video_info}", "视频尚未处理完成")
 
         try:
             answer = self.core_llm.chat([
