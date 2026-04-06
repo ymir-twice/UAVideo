@@ -156,25 +156,35 @@ export const useSessionStore = defineStore('session', () => {
         sessionStorage.setItem('currentSessionId', sessionId)
       }
 
-      // Start understanding if not done
-      if (!hasAnalysis.value) {
+      // Check if understanding is already done by getting session status
+      const sessionResp = await apiClient.get(`/sessions/${sessionId}`)
+      const sessionData = sessionResp.data
+      const isAlreadyDone = sessionData.has_understanding || sessionData.status?.stage === 'done'
+
+      if (!isAlreadyDone) {
+        // Start understanding and wait for completion
         await startVideoUnderstanding(sessionId)
+      } else {
+        // Already done, just update status
+        processingStage.value = 'done'
+        processingProgress.value = 1.0
+        processingMessage.value = '处理完成'
+        analysisResult.value = {
+          summary: '视频分析完成',
+          duration: sessionData.video_duration || 0,
+          framesExtracted: sessionData.total_frames || 0,
+          audioTranscribed: '',
+          keyTags: [],
+          processingTime: 0
+        }
       }
 
-      // Send question (non-streaming)
+      // Now send the question
       const resp = await apiClient.post(`/sessions/${sessionId}/question`, {
         question: content
       })
 
       assistantMsg.content = resp.data.answer
-      analysisResult.value = {
-        summary: '视频分析完成',
-        duration: videoInfo.value?.duration || 0,
-        framesExtracted: 16,
-        audioTranscribed: '',
-        keyTags: [],
-        processingTime: 0
-      }
     } catch (e: any) {
       assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
     } finally {
@@ -209,22 +219,33 @@ export const useSessionStore = defineStore('session', () => {
                 analysisResult.value = {
                   summary: '视频分析完成',
                   duration: videoInfo.value?.duration || 0,
-                  framesExtracted: parseInt(data[1]) || 16,
+                  framesExtracted: 16,
                   audioTranscribed: '',
                   keyTags: [],
                   processingTime: 0
                 }
                 closeEventSource()
                 resolve()
+              } else if (data[0] === 'error') {
+                error.value = data[2] || '处理出错'
+                isProcessing.value = false
+                closeEventSource()
+                reject(new Error(data[2] || '处理出错'))
               }
             }
           }
 
           eventSource.onerror = () => {
-            error.value = '连接中断'
-            isProcessing.value = false
-            closeEventSource()
-            reject(new Error('SSE connection error'))
+            // Don't reject immediately - check if we're already done
+            if (processingStage.value === 'done') {
+              closeEventSource()
+              resolve()
+            } else {
+              error.value = '连接中断'
+              isProcessing.value = false
+              closeEventSource()
+              reject(new Error('SSE connection error'))
+            }
           }
         })
         .catch((e) => {
