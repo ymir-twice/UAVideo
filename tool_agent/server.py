@@ -251,10 +251,15 @@ def create_app() -> FastAPI:
     @app.get("/sessions/{session_id}/stream")
     async def stream_session(
         session_id: str,
-        authorization: str | None = Header(default=None)
+        authorization: str | None = Header(default=None),
+        token: str | None = None  # Query param for SSE auth
     ):
         """SSE流式输出处理进度"""
-        if not _auth_ok(authorization, settings.auth_token):
+        # SSE无法发送自定义header，允许通过query参数传递token
+        auth_header = authorization
+        if not auth_header and token:
+            auth_header = f"Bearer {token}"
+        if not _auth_ok(auth_header, settings.auth_token):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         session = orchestrator.session_manager.get_session(session_id)

@@ -189,7 +189,7 @@ export const useSessionStore = defineStore('session', () => {
     processingMessage.value = '准备分析...'
 
     return new Promise<void>((resolve, reject) => {
-      eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream`, {
+      eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream?token=${AUTH_TOKEN}`, {
         withCredentials: true
       })
 
