@@ -66,6 +66,8 @@ export const useSessionStore = defineStore('session', () => {
   const isStreaming = ref(false)
   const streamingContent = ref('')
 
+  // Use in-memory session ID instead of sessionStorage
+  let currentSessionId: string | null = null
   let eventSource: EventSource | null = null
 
   // Computed
@@ -143,29 +145,30 @@ export const useSessionStore = defineStore('session', () => {
     messages.value.push(assistantMsg)
 
     try {
-      // First check if session exists, if not create one
-      let sessionId = sessionStorage.getItem('currentSessionId')
-
-      if (!sessionId) {
+      // First check if we have a session, if not create one
+      if (!currentSessionId) {
         const formData = new FormData()
         formData.append('video', videoInfo.value.file)
         const resp = await apiClient.post('/sessions', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
-        sessionId = resp.data.session_id
-        sessionStorage.setItem('currentSessionId', sessionId)
+        currentSessionId = resp.data.session_id
+        console.log('[VideoBuddy] Created session:', currentSessionId)
       }
 
-      // Check if understanding is already done by getting session status
-      const sessionResp = await apiClient.get(`/sessions/${sessionId}`)
+      // Check if understanding is already done
+      const sessionResp = await apiClient.get(`/sessions/${currentSessionId}`)
       const sessionData = sessionResp.data
+      console.log('[VideoBuddy] Session status:', sessionData.status?.stage, 'has_understanding:', sessionData.has_understanding)
       const isAlreadyDone = sessionData.has_understanding || sessionData.status?.stage === 'done'
 
       if (!isAlreadyDone) {
         // Start understanding and wait for completion
-        await startVideoUnderstanding(sessionId)
+        console.log('[VideoBuddy] Starting video understanding...')
+        await startVideoUnderstanding(currentSessionId)
+        console.log('[VideoBuddy] Video understanding complete')
       } else {
-        // Already done, just update status
+        // Already done, update status
         processingStage.value = 'done'
         processingProgress.value = 1.0
         processingMessage.value = '处理完成'
@@ -180,12 +183,15 @@ export const useSessionStore = defineStore('session', () => {
       }
 
       // Now send the question
-      const resp = await apiClient.post(`/sessions/${sessionId}/question`, {
+      console.log('[VideoBuddy] Sending question...')
+      const resp = await apiClient.post(`/sessions/${currentSessionId}/question`, {
         question: content
       })
+      console.log('[VideoBuddy] Question response:', resp.data.answer?.substring(0, 100))
 
       assistantMsg.content = resp.data.answer
     } catch (e: any) {
+      console.error('[VideoBuddy] Error:', e)
       assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
     } finally {
       isProcessing.value = false
@@ -199,15 +205,16 @@ export const useSessionStore = defineStore('session', () => {
     processingMessage.value = '准备分析...'
 
     return new Promise<void>((resolve, reject) => {
+      console.log('[VideoBuddy] Calling /understand endpoint...')
       // First, call /understand to START the processing
       apiClient.post(`/sessions/${sessionId}/understand`)
         .then(() => {
+          console.log('[VideoBuddy] /understand called successfully, connecting to SSE...')
           // Then connect to SSE stream to listen for progress
-          eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream?token=${AUTH_TOKEN}`, {
-            withCredentials: true
-          })
+          eventSource = new EventSource(`${API_BASE}/sessions/${sessionId}/stream?token=${AUTH_TOKEN}`)
 
           eventSource.onmessage = (event) => {
+            console.log('[VideoBuddy] SSE message:', event.data)
             const data = event.data.split('|')
             if (data.length >= 3) {
               processingStage.value = data[0]
@@ -215,6 +222,7 @@ export const useSessionStore = defineStore('session', () => {
               processingMessage.value = data[2] || ''
 
               if (data[0] === 'done') {
+                console.log('[VideoBuddy] SSE received done signal')
                 isProcessing.value = false
                 analysisResult.value = {
                   summary: '视频分析完成',
@@ -227,6 +235,7 @@ export const useSessionStore = defineStore('session', () => {
                 closeEventSource()
                 resolve()
               } else if (data[0] === 'error') {
+                console.error('[VideoBuddy] SSE received error:', data[2])
                 error.value = data[2] || '处理出错'
                 isProcessing.value = false
                 closeEventSource()
@@ -235,9 +244,11 @@ export const useSessionStore = defineStore('session', () => {
             }
           }
 
-          eventSource.onerror = () => {
+          eventSource.onerror = (e) => {
+            console.error('[VideoBuddy] SSE error, stage:', processingStage.value, e)
             // Don't reject immediately - check if we're already done
             if (processingStage.value === 'done') {
+              console.log('[VideoBuddy] SSE closed but processing was done, resolving...')
               closeEventSource()
               resolve()
             } else {
@@ -249,6 +260,7 @@ export const useSessionStore = defineStore('session', () => {
           }
         })
         .catch((e) => {
+          console.error('[VideoBuddy] /understand error:', e)
           error.value = `启动失败: ${e.response?.data?.detail || e.message}`
           isProcessing.value = false
           reject(e)
@@ -271,10 +283,10 @@ export const useSessionStore = defineStore('session', () => {
       duration: 0,
       framesCount: 0
     }
-    // Clear previous analysis
+    // Clear previous session
+    currentSessionId = null
     analysisResult.value = null
     messages.value = []
-    sessionStorage.removeItem('currentSessionId')
   }
 
   function setVideoUrl(url: string) {
@@ -285,16 +297,16 @@ export const useSessionStore = defineStore('session', () => {
       duration: 0,
       framesCount: 0
     }
+    currentSessionId = null
     analysisResult.value = null
     messages.value = []
-    sessionStorage.removeItem('currentSessionId')
   }
 
   function clearVideo() {
     videoInfo.value = null
     analysisResult.value = null
     messages.value = []
-    sessionStorage.removeItem('currentSessionId')
+    currentSessionId = null
   }
 
   async function loadHistory() {
