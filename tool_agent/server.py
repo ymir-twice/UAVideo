@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Header, HTTPException, UploadFile, File, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -252,7 +252,7 @@ def create_app() -> FastAPI:
     async def stream_session(
         session_id: str,
         authorization: str | None = Header(default=None),
-        token: str | None = None  # Query param for SSE auth
+        token: str | None = Query(default=None, description="SSE auth token (fallback when header unavailable)")
     ):
         """SSE流式输出处理进度"""
         # SSE无法发送自定义header，允许通过query参数传递token
