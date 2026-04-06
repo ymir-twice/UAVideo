@@ -12,7 +12,7 @@
             <div class="header-right">
               <n-button quaternary circle @click="store.toggleHistory()" title="历史对话">
                 <template #icon>
-                  <n-icon><menu-outline /></n-icon>
+                  <n-icon :component="menuOutline" />
                 </template>
               </n-button>
             </div>
@@ -46,9 +46,7 @@
                   @change="handleFileSelect"
                 />
                 <div class="upload-content">
-                  <n-icon :size="32" class="upload-icon">
-                    <cloud-upload-outline />
-                  </n-icon>
+                  <n-icon :size="32" :component="cloudUploadOutline" class="upload-icon" />
                   <span class="upload-text">点击选择视频文件</span>
                   <span class="upload-hint">支持 MP4, AVI, MOV, WebM</span>
                 </div>
@@ -70,11 +68,11 @@
 
               <div v-if="store.hasVideo" class="video-preview">
                 <div class="preview-info">
-                  <n-icon><film-outline /></n-icon>
+                  <n-icon :component="filmOutline" />
                   <span>{{ store.videoInfo?.name }}</span>
                   <n-button quaternary circle size="small" @click="store.clearVideo()">
                     <template #icon>
-                      <n-icon><close-outline /></n-icon>
+                      <n-icon :component="closeOutline" />
                     </template>
                   </n-button>
                 </div>
@@ -90,7 +88,7 @@
                 class="video-player"
               />
               <div v-else class="video-placeholder">
-                <n-icon :size="48"><videocam-outline /></n-icon>
+                <n-icon :size="48" :component="videocamOutline" />
                 <span>{{ store.videoInfo?.name }}</span>
               </div>
             </div>
@@ -142,12 +140,8 @@
           <!-- Status Bar -->
           <div class="status-bar">
             <div class="status-content">
-              <n-icon v-if="store.isProcessing" class="status-icon spinning">
-                <sync-outline />
-              </n-icon>
-              <n-icon v-else class="status-icon">
-                <checkmark-circle-outline />
-              </n-icon>
+              <n-icon v-if="store.isProcessing" :component="syncOutline" class="status-icon spinning" />
+              <n-icon v-else :component="checkmarkCircleOutline" class="status-icon" />
               <span class="status-text">
                 {{ store.isProcessing ? store.processingMessage : 'VideoBuddy 已就绪' }}
               </span>
@@ -182,7 +176,7 @@
                 class="send-btn"
               >
                 <template #icon>
-                  <n-icon><paper-plane-outline /></n-icon>
+                  <n-icon :component="paperPlaneOutline" />
                 </template>
               </n-button>
             </div>
@@ -203,7 +197,7 @@
                   @click="loadSession(session.sessionId)"
                 >
                   <div class="history-icon">
-                    <n-icon><film-outline /></n-icon>
+                    <n-icon :component="filmOutline" />
                   </div>
                   <div class="history-info">
                     <span class="history-name">{{ session.videoName }}</span>
@@ -229,14 +223,14 @@ import {
   NButton, NInput, NDrawer, NDrawerContent, NEmpty, NProgress
 } from 'naive-ui'
 import {
-  menuOutline,
-  cloudUploadOutline,
-  filmOutline,
-  closeOutline,
-  videocamOutline,
-  syncOutline,
-  checkmarkCircleOutline,
-  paperPlaneOutline
+  MenuOutline,
+  CloudUploadOutline,
+  FilmOutline,
+  CloseOutline,
+  VideocamOutline,
+  SyncOutline,
+  CheckmarkCircleOutline,
+  PaperPlaneOutline
 } from '@vicons/ionicons5'
 import { useSessionStore } from './stores/session'
 import { marked } from 'marked'
@@ -245,7 +239,17 @@ import hljs from 'highlight.js'
 const store = useSessionStore()
 
 // Logo
-const logoUrl = new URL('../VideoBuddy.png', import.meta.url).href
+const logoUrl = '/videobuddy.png'
+
+// Icons
+const menuOutline = MenuOutline
+const cloudUploadOutline = CloudUploadOutline
+const filmOutline = FilmOutline
+const closeOutline = CloseOutline
+const videocamOutline = VideocamOutline
+const syncOutline = SyncOutline
+const checkmarkCircleOutline = CheckmarkCircleOutline
+const paperPlaneOutline = PaperPlaneOutline
 
 // Upload
 const uploadMode = ref<'file' | 'url'>('file')
@@ -364,11 +368,9 @@ function formatTime(timestamp: number): string {
 }
 
 async function loadSession(sessionId: string) {
-  // TODO: Implement session loading
   store.isHistoryOpen = false
 }
 
-// Watch for new messages to scroll
 watch(() => store.messages.length, () => {
   nextTick(() => scrollToBottom())
 })
