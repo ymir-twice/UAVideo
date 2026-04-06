@@ -269,10 +269,11 @@ def create_app() -> FastAPI:
                 import traceback
                 log_to_file(session_id, f"[BG] ERROR: {type(e).__name__}: {str(e)}")
                 log_to_file(session_id, f"[BG] Traceback: {traceback.format_exc()}")
-                session = orchestrator.session_manager.get_session(session_id)
-                if session:
-                    session.update_status("error", message=str(e), error=str(e))
-                    orchestrator.session_manager.update_session(session)
+                # Note: don't shadow outer 'session' variable - use different name
+                err_session = orchestrator.session_manager.get_session(session_id)
+                if err_session:
+                    err_session.update_status("error", message=str(e), error=str(e))
+                    orchestrator.session_manager.update_session(err_session)
 
         background_tasks.add_task(run_understanding)
         log_to_file(session_id, "[API] Background task added")
