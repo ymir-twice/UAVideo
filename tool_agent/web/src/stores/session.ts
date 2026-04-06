@@ -244,14 +244,47 @@ export const useSessionStore = defineStore('session', () => {
             }
           }
 
-          eventSource.onerror = (e) => {
+          eventSource.onerror = async (e) => {
             console.error('[VideoBuddy] SSE error, stage:', processingStage.value, e)
-            // Don't reject immediately - check if we're already done
+            // SSE errored. If stage is 'done', we already completed
             if (processingStage.value === 'done') {
               console.log('[VideoBuddy] SSE closed but processing was done, resolving...')
               closeEventSource()
               resolve()
-            } else {
+              return
+            }
+
+            // SSE failed before receiving 'done'. Check session status via API
+            console.log('[VideoBuddy] SSE error before completion, checking session status...')
+            try {
+              const statusResp = await apiClient.get(`/sessions/${sessionId}`)
+              const sessionData = statusResp.data
+              console.log('[VideoBuddy] Session status check:', sessionData.status?.stage, 'has_understanding:', sessionData.has_understanding)
+
+              if (sessionData.has_understanding || sessionData.status?.stage === 'done') {
+                // Processing completed while SSE was failing
+                processingStage.value = 'done'
+                processingProgress.value = 1.0
+                processingMessage.value = '处理完成'
+                analysisResult.value = {
+                  summary: '视频分析完成',
+                  duration: sessionData.video_duration || 0,
+                  framesExtracted: sessionData.total_frames || 0,
+                  audioTranscribed: '',
+                  keyTags: [],
+                  processingTime: 0
+                }
+                closeEventSource()
+                resolve()
+              } else {
+                // Processing not done, SSE genuinely failed
+                error.value = '连接中断'
+                isProcessing.value = false
+                closeEventSource()
+                reject(new Error('SSE connection error'))
+              }
+            } catch (checkErr) {
+              console.error('[VideoBuddy] Status check failed:', checkErr)
               error.value = '连接中断'
               isProcessing.value = false
               closeEventSource()
