@@ -2,6 +2,7 @@ import os
 import uuid
 import asyncio
 import tempfile
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -23,6 +24,25 @@ from .schemas import (
 from .settings import Settings
 from .tools.caption import CaptionEngine
 from .session import Session
+
+# 配置日志
+LOG_DIR = Path("/mnt/data/gk/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# 业务日志文件
+business_log = LOG_DIR / "business.log"
+
+def log_to_file(session_id: str, message: str):
+    """记录日志到文件"""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"[{timestamp}] [Session:{session_id}] {message}\n"
+    with open(business_log, "a", encoding="utf-8") as f:
+        f.write(log_line)
+    # 同时打印到stdout
+    print(f"[Session:{session_id[:8]}] {message}", flush=True)
+
+# 导入time
+import time
 
 
 def _load_env():
@@ -49,20 +69,24 @@ def _auth_ok(authorization: str | None, token: str) -> bool:
 async def sse_generator(session_manager, session_id: str):
     """生成SSE流"""
     import time
+    log_to_file(session_id, "[SSE] Stream started")
     last_progress = -1.0
 
     while True:
         session = session_manager.get_session(session_id)
         if not session:
+            log_to_file(session_id, "[SSE] Session not found, ending stream")
             yield f"event: error\ndata: Session not found\n\n"
             break
 
         status = session.status
         if status.progress != last_progress:
+            log_to_file(session_id, f"[SSE] Stage: {status.stage}, Progress: {status.progress}, Message: {status.message}")
             yield f"event: progress\ndata: {status.stage}|{status.progress}|{status.message}\n\n"
             last_progress = status.progress
 
         if status.stage in ("done", "error"):
+            log_to_file(session_id, f"[SSE] Stream ending, stage={status.stage}")
             yield f"event: complete\ndata: {status.stage}\n\n"
             break
 
@@ -220,7 +244,11 @@ def create_app() -> FastAPI:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        log_to_file(session_id, f"[API] start_understanding called, video_path={session.video_path}")
+        log_to_file(session_id, f"[API] is_processing={session.is_processing()}")
+
         if session.is_processing():
+            log_to_file(session_id, "[API] already processing, returning early")
             return {
                 "message": "视频正在处理中",
                 "session_id": session_id,
@@ -230,18 +258,24 @@ def create_app() -> FastAPI:
         # 在后台运行理解流程
         async def run_understanding():
             try:
+                log_to_file(session_id, "[BG] Starting understand_video")
                 await orchestrator.understand_video(
                     session.video_path,
                     session_id,
                     max_frames=settings.max_frames
                 )
+                log_to_file(session_id, "[BG] understand_video completed successfully")
             except Exception as e:
+                import traceback
+                log_to_file(session_id, f"[BG] ERROR: {type(e).__name__}: {str(e)}")
+                log_to_file(session_id, f"[BG] Traceback: {traceback.format_exc()}")
                 session = orchestrator.session_manager.get_session(session_id)
                 if session:
                     session.update_status("error", message=str(e), error=str(e))
                     orchestrator.session_manager.update_session(session)
 
         background_tasks.add_task(run_understanding)
+        log_to_file(session_id, "[API] Background task added")
 
         return {
             "message": "视频理解已启动，请通过 /sessions/{id}/stream 监听进度",

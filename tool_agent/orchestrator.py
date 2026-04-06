@@ -10,8 +10,10 @@ import io
 import json
 import time
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Callable
+from pathlib import Path
 
 from PIL import Image
 
@@ -25,6 +27,18 @@ from .memory import (
 from .session import SessionManager, Session, ProcessingStatus
 from .tools.caption import CaptionEngine
 from .tools.asr import ASREngine, ASRResult
+
+# 日志配置
+LOG_DIR = Path("/mnt/data/gk/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+orch_log = LOG_DIR / "orchestrator.log"
+
+def log_orch(session_id: str, msg: str):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"[{timestamp}] [Orch:{session_id[:8]}] {msg}\n"
+    with open(orch_log, "a", encoding="utf-8") as f:
+        f.write(log_line)
+    print(f"[Orch:{session_id[:8]}] {msg}", flush=True)
 
 
 ContentPart = Dict[str, Any]
@@ -200,10 +214,14 @@ class VideoUnderstandingOrchestrator:
         6. 定期consolidate到长期记忆
         7. 生成整体摘要
         """
+        log_orch(session_id, f"Starting understand_video, video_path={video_path}, max_frames={max_frames}")
+
         self.initialize_tools()
+        log_orch(session_id, "Tools initialized")
 
         session = self.session_manager.get_session(session_id)
         if not session:
+            log_orch(session_id, "ERROR: Session not found!")
             raise ValueError(f"Session {session_id} not found")
 
         start_time = time.time()
@@ -211,25 +229,32 @@ class VideoUnderstandingOrchestrator:
         # 更新状态：开始处理
         session.update_status("extracting", progress=0.1, message="正在提取视频帧...")
         self.session_manager.update_session(session)
+        log_orch(session_id, "Status set to extracting")
 
         try:
             # Step 1: 获取视频信息
+            log_orch(session_id, "Step 1: Getting video duration")
             duration = self._get_video_duration(video_path)
             session.video_duration = duration
             session.update_status("extracting", progress=0.15, message=f"视频时长: {duration:.1f}秒")
             self.session_manager.update_session(session)
+            log_orch(session_id, f"Duration: {duration:.1f}s")
 
             # Step 2: 提取帧
+            log_orch(session_id, f"Step 2: Extracting frames (max={max_frames})")
             frames = self._extract_frames(video_path, max_frames)
             session.total_frames_processed = len(frames)
             session.update_status("captioning", progress=0.3, message=f"已提取 {len(frames)} 帧")
             self.session_manager.update_session(session)
+            log_orch(session_id, f"Extracted {len(frames)} frames")
 
             # Step 3: 处理每帧（caption）
+            log_orch(session_id, "Step 3: Processing frames (caption)")
             short_term = 短期记忆(window_size=50, max_age_seconds=300)
             asr_result = None
 
             for i, (frame_path, timestamp) in enumerate(frames):
+                log_orch(session_id, f"  Processing frame {i+1}/{len(frames)}: {frame_path}")
                 frame_data = await self._process_frame(
                     frame_path, timestamp, i,
                     session_id=session_id
@@ -244,8 +269,11 @@ class VideoUnderstandingOrchestrator:
                 if progress_callback:
                     progress_callback("captioning", progress, f"处理帧 {i+1}/{len(frames)}")
 
+            log_orch(session_id, f"Step 3 complete: {len(short_term.frames)} frames processed")
+
             # Step 4: ASR音频转写
             if self.asr and duration > 0:
+                log_orch(session_id, "Step 4: ASR audio transcription")
                 session.update_status("asr", progress=0.7, message="正在转写音频...")
                 self.session_manager.update_session(session)
 
@@ -254,18 +282,24 @@ class VideoUnderstandingOrchestrator:
                     # 将ASR结果同步到帧
                     for frame in short_term.frames:
                         frame.audio_text = asr_result.get_text_at_time(frame.timestamp)
+                    log_orch(session_id, "ASR completed")
                 except Exception as e:
+                    log_orch(session_id, f"ASR error (skipping): {str(e)[:100]}")
                     session.update_status("asr", progress=0.7, message=f"ASR跳过: {str(e)[:50]}")
 
                 if progress_callback:
                     progress_callback("asr", 0.8, "音频转写完成")
+            else:
+                log_orch(session_id, "Step 4 skipped: no ASR available or duration=0")
 
             # Step 5: 保存短期记忆
+            log_orch(session_id, "Step 5: Saving short-term memory")
             session.short_term = short_term
             session.update_status("consolidating", progress=0.85, message="构建长期记忆...")
             self.session_manager.update_session(session)
 
             # Step 6: Consolidate到长期记忆
+            log_orch(session_id, "Step 6: Consolidating to long-term memory")
             long_term = await self._consolidate_to_long_term(
                 session_id, short_term, session
             )
@@ -298,9 +332,14 @@ class VideoUnderstandingOrchestrator:
             session.understanding_result = result
             self.session_manager.update_session(session)
 
+            log_orch(session_id, f"COMPLETED in {processing_time:.1f}s")
+            log_orch(session_id, f"  frames: {len(frames)}, segments: {len(long_term.segments)}")
             return result
 
         except Exception as e:
+            import traceback
+            log_orch(session_id, f"ERROR: {type(e).__name__}: {str(e)}")
+            log_orch(session_id, f"Traceback: {traceback.format_exc()}")
             session.update_status("error", progress=0.0, message=str(e), error=str(e))
             self.session_manager.update_session(session)
             raise
