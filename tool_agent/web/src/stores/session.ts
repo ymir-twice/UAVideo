@@ -113,13 +113,11 @@ export const useSessionStore = defineStore('session', () => {
     messages.value.push(assistantMsg)
 
     try {
-      const response = await apiClient.post('/chat/stream', {
+      const response = await apiClient.post('/v1/chat/completions', {
+        model: 'tool-agent',
         messages: messages.value.map(m => ({ role: m.role, content: m.content }))
-      }, {
-        responseType: 'text'
       })
 
-      // Simple non-streaming response for now
       assistantMsg.content = response.data.choices[0].message.content
     } catch (e: any) {
       assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
@@ -145,7 +143,6 @@ export const useSessionStore = defineStore('session', () => {
     messages.value.push(assistantMsg)
 
     try {
-      // For streaming, we use SSE
       // First check if session exists, if not create one
       let sessionId = sessionStorage.getItem('currentSessionId')
 
@@ -164,23 +161,19 @@ export const useSessionStore = defineStore('session', () => {
         await startVideoUnderstanding(sessionId)
       }
 
-      // Send question via streaming
-      const streamResp = await fetch(`${API_BASE}/sessions/${sessionId}/question/stream?question=${encodeURIComponent(content)}`, {
-        headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+      // Send question (non-streaming)
+      const resp = await apiClient.post(`/sessions/${sessionId}/question`, {
+        question: content
       })
 
-      const reader = streamResp.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          streamingContent.value += chunk
-          assistantMsg.content = streamingContent.value
-        }
+      assistantMsg.content = resp.data.answer
+      analysisResult.value = {
+        summary: '视频分析完成',
+        duration: videoInfo.value?.duration || 0,
+        framesExtracted: 16,
+        audioTranscribed: '',
+        keyTags: [],
+        processingTime: 0
       }
     } catch (e: any) {
       assistantMsg.content = `抱歉，发生了错误：${e.response?.data?.detail || e.message}`
